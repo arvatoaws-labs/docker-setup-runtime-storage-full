@@ -1,63 +1,38 @@
 #!/usr/bin/env bash
 set -ex
 
-ROOT_PATH="/.bottlerocket/rootfs"
-
 # Symlinks to ephemeral disks are created here by udev
-declare -a EPHEMERAL_DISKS
-EPHEMERAL_DISKS=("${ROOT_PATH}"/dev/disk/ephemeral/*)
+EPHEMERAL_DISKS=/.bottlerocket/rootfs/dev/disk/ephemeral
 
 # Exit early if there aren't ephemeral disks
-if [ "${#EPHEMERAL_DISKS[@]}" -eq 0 ]; then
-  echo "no ephemeral disks found"
+if [ ! -d ${EPHEMERAL_DISKS} ]; then
+  echo "${EPHEMERAL_DISKS} doesn't exist"
   exit 1
 fi
 
-MD_NAME="scratch"
-MD_DEVICE="/dev/md/${MD_NAME}"
-MD_CONFIG="/.bottlerocket/bootstrap-containers/current/mdadm.conf"
+# Use the first ephemeral disk
+DISK="$(cd ${EPHEMERAL_DISKS} && readlink -f $(ls | head -n 1))"
+# There will be only one partition
+PARTITION="${DISK}p1"
+# For k8s, use containerd, for ECS use docker
+CONTAINER_RUNTIME=containerd
+# Path where the disk will be mounted
+MOUNT_POINT=/.bottlerocket/rootfs/mnt/${CONTAINER_RUNTIME}
+# The path to the container's runtime root
+RUNTIME_ROOT_PATH=/.bottlerocket/rootfs/var/lib/${CONTAINER_RUNTIME}
 
-# Create or assemble the array.
-if [ ! -s "${MD_CONFIG}" ] ; then
-  mdadm --create --force --verbose \
-    "${MD_DEVICE}" \
-      --level=0 \
-      --name="${MD_NAME}" \
-      --raid-devices="${#EPHEMERAL_DISKS[@]}" \
-      "${EPHEMERAL_DISKS[@]}"
-  mdadm --detail --scan > "${MD_CONFIG}"
-else
-  mdadm --assemble --config="${MD_CONFIG}" "${MD_DEVICE}"
+# If the partition doesn't exist, create it
+if [ ! -e ${PARTITION} ]; then
+  parted -s ${DISK} mklabel gpt 1>/dev/null
+  parted -s ${DISK} mkpart primary ext4 0% 100% 1>/dev/null
+  mkfs.ext4 -F ${PARTITION}
 fi
 
-# Format the array if not already formatted.
-if ! blkid --match-token TYPE=ext4 "${MD_DEVICE}" ; then
-  mkfs.ext4 "${MD_DEVICE}"
-fi
+mkdir -p ${MOUNT_POINT}
+mount ${PARTITION} ${MOUNT_POINT}
 
-MOUNT_POINT="${ROOT_PATH}/mnt/${MD_NAME}"
-
-# Mount the array in the host's /mnt.
-mkdir -p "${MOUNT_POINT}"
-mount "${MD_DEVICE}" "${MOUNT_POINT}"
-
-# Keep track of whether we can unmount the array later. This depends on the
-# version of Bottlerocket.
-should_umount="no"
-
-# Bind state directories to the array, if they exist.
-for state_dir in containerd docker kubelet ; do
-  # For Bottlerocket >= 1.9.0, the state directory can be bind-mounted over
-  # the host directory and the mount will propagate back to the host.
-  mkdir -p "${MOUNT_POINT}/${state_dir}"
-  mount --rbind "${MOUNT_POINT}/${state_dir}" "${ROOT_PATH}/var/lib/${state_dir}"
-  mount --make-rshared "${ROOT_PATH}/var/lib/${state_dir}"
-  should_umount="yes"
-done
-
-# When using bind mounts, the parent directory where the array is mounted can
-# be unmounted. This avoids a second, redundant mount entry under `/mnt` for
-# every new mount in one of the state directories.
-if [ "${should_umount}" == "yes" ] ; then
-  umount "${MOUNT_POINT}"
-fi
+# If the container's runtime root directory exists, you have to manually delete it
+if [ ! -d ${RUNTIME_ROOT_PATH} ]; then
+  # Use /mnt since the symlink will be seen from the host's perspective
+  ln -snf /mnt/${CONTAINER_RUNTIME} ${RUNTIME_ROOT_PATH}
+ fi
