@@ -36,6 +36,7 @@ spec:
           memory: 200Mi
       nodeClassRef:
         name: bottlerocket-instance-store
+        #name: bottlerocket
       requirements:
       - key: karpenter.sh/capacity-type
         operator: In

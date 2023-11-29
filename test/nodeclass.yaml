@@ -10,26 +10,26 @@ spec:
     ebs:
       deleteOnTermination: true
       encrypted: true
-      volumeSize: 10Gi
+      volumeSize: 2Gi
       volumeType: gp3
   - deviceName: /dev/xvdb
     #virtualName: "ephemeral0"
     ebs:
       deleteOnTermination: true
       encrypted: true
-      volumeSize: 2Gi
+      volumeSize: 10Gi
       volumeType: gp3
-  role: "KarpenterNodeRole-${CLUSTER_NAME}"
+  role: "KarpenterNodeRole-dev-mgmt"
   securityGroupSelectorTerms:
   - tags:
-      aws:eks:cluster-name: ${CLUSTER_NAME}
+      aws:eks:cluster-name: "dev-mgmt"
   subnetSelectorTerms:
   - tags:
       kubernetes.io/role/internal-elb: "1"
   tags:
-    eks:cluster-name: ${CLUSTER_NAME}
-  # userData:  |
-  #   [settings.bootstrap-containers.setup-runtime-storage-full]
-  #   source = "ghcr.io/arvatoaws-labs/setup-runtime-storage-full:latest"
-  #   mode = "always"
-  #   essential = true
+    eks:cluster-name: "dev-mgmt"
+  userData:  |
+    [settings.bootstrap-containers.setup-runtime-storage-full]
+    source = "ghcr.io/arvatoaws-labs/setup-runtime-storage-full:latest"
+    mode = "always"
+    essential = true
