@@ -13,7 +13,6 @@ spec:
       volumeSize: 2Gi
       volumeType: gp3
   - deviceName: /dev/xvdb
-    #virtualName: "ephemeral0"
     ebs:
       deleteOnTermination: true
       encrypted: true
